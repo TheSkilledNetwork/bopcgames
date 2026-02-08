@@ -32,9 +32,9 @@ const H = canvas.height;
 
 // Difficulty tuning
 const SETTINGS = {
-  easy:   { startSpeed: 135, maxSpeed: 250, speedStep: 6,  dashFactor: 0.35 },
-  medium: { startSpeed: 150, maxSpeed: 320, speedStep: 8,  dashFactor: 0.40 },
-  hard:   { startSpeed: 165, maxSpeed: 380, speedStep: 10, dashFactor: 0.45 },
+  easy:   { startSpeed: 110, maxSpeed: 180, speedStep: 8,  dashFactor: 0.35 },
+  medium: { startSpeed: 110, maxSpeed: 200, speedStep: 8,  dashFactor: 0.30 },
+  hard:   { startSpeed: 115, maxSpeed: 200, speedStep: 10, dashFactor: 0.35 },
   wordFont: 12,
   wordMaxLen: 16
 };
