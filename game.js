@@ -233,3 +233,20 @@ startBtn.addEventListener("click", startGame);
 
 player.x = laneCenter(player.lane) - player.w / 2;
 draw();
+let startX = null;
+
+canvas.addEventListener("touchstart", (e) => {
+  startX = e.touches[0].clientX;
+});
+
+canvas.addEventListener("touchend", (e) => {
+  if (startX === null) return;
+
+  const endX = e.changedTouches[0].clientX;
+  const diff = endX - startX;
+
+  if (diff > 40) moveDir = 1;
+  if (diff < -40) moveDir = -1;
+
+  startX = null;
+});
