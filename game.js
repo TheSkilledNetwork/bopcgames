@@ -3,6 +3,7 @@ const ctx = canvas.getContext("2d");
 
 const scoreEl = document.getElementById("score");
 const bestEl = document.getElementById("best");
+const targetEl = document.getElementById("targetWord");
 
 const leftBtn = document.getElementById("left");
 const rightBtn = document.getElementById("right");
@@ -11,18 +12,14 @@ const startBtn = document.getElementById("start");
 const W = canvas.width;
 const H = canvas.height;
 
-const bestKey = "lane-racer-best";
+const bestKey = "spelling-racer-best";
 let best = Number(localStorage.getItem(bestKey) || 0);
 bestEl.textContent = String(best);
 
 let running = false;
 let lastTs = 0;
 
-const road = {
-  x: 60,
-  w: 240,
-  laneCount: 3
-};
+const road = { x: 40, w: 280, laneCount: 3 };
 
 function laneCenter(laneIndex){
   const laneW = road.w / road.laneCount;
@@ -30,48 +27,111 @@ function laneCenter(laneIndex){
 }
 
 const player = {
-  w: 40,
-  h: 70,
+  w: 42,
+  h: 76,
   lane: 1,
   x: 0,
-  y: H - 90
+  y: H - 110
 };
 
-let enemies = [];
-let spawnTimer = 0;
-let spawnEvery = 0.9;
-
-let speed = 220;
 let score = 0;
-let difficultyTimer = 0;
 
 let moveDir = 0;
+let dashOffset = 0;
+
+let speed = 230;
+
+let wordBank = [];
+let currentTarget = "";
+let currentOptions = [];
+let optionCars = [];
+let roundActive = false;
+
+function clamp(v, min, max){
+  return Math.max(min, Math.min(max, v));
+}
+
+function rectHit(a,b){
+  return (
+    a.x < b.x + b.w &&
+    a.x + a.w > b.x &&
+    a.y < b.y + b.h &&
+    a.y + a.h > b.y
+  );
+}
+
+function pickRandom(arr){
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function mutateWord(word){
+  if(word.length < 4) return word;
+  const ops = [];
+
+  const i = 1 + Math.floor(Math.random() * (word.length - 2));
+  ops.push(word.slice(0,i) + word[i+1] + word[i] + word.slice(i+2));
+
+  const j = 1 + Math.floor(Math.random() * (word.length - 2));
+  ops.push(word.slice(0,j) + word[j] + word.slice(j+1));
+
+  const k = 1 + Math.floor(Math.random() * (word.length - 2));
+  ops.push(word.slice(0,k) + word[k+1] + word.slice(k+2));
+
+  for(const m of ops){
+    if(m !== word && m.length >= 3) return m;
+  }
+  return word;
+}
+
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random() * (i+1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+async function loadWords(){
+  try{
+    const res = await fetch("words.json", { cache: "no-store" });
+    if(!res.ok) throw new Error("words.json not found");
+    const data = await res.json();
+    if(!data.words || !Array.isArray(data.words) || data.words.length < 5){
+      throw new Error("words.json has invalid format");
+    }
+    wordBank = data.words.map(w => String(w).trim()).filter(Boolean);
+  }catch(e){
+    wordBank = [
+      "accommodate","achievement","beginning","calendar","conscience",
+      "definitely","embarrass","environment","favourite","government",
+      "independent","necessary","occasionally","separate","tomorrow"
+    ];
+  }
+}
 
 function resetGame(){
   player.lane = 1;
   player.x = laneCenter(player.lane) - player.w / 2;
 
-  enemies = [];
-  spawnTimer = 0;
-  spawnEvery = 0.9;
-
-  speed = 220;
   score = 0;
-  difficultyTimer = 0;
-
   scoreEl.textContent = "0";
+
+  speed = 230;
+  dashOffset = 0;
+
+  optionCars = [];
+  roundActive = false;
+
+  currentTarget = "";
+  currentOptions = [];
+  targetEl.textContent = "-";
+
   lastTs = 0;
   moveDir = 0;
 }
 
-function startGame(){
-  resetGame();
-  running = true;
-  startBtn.textContent = "Restart";
-  requestAnimationFrame(loop);
-}
-
-function endGame(){
+function endGame(reason){
   running = false;
 
   best = Math.max(best, Math.floor(score));
@@ -85,30 +145,70 @@ function endGame(){
 
   ctx.fillStyle = "#ffffff";
   ctx.textAlign = "center";
-  ctx.font = "bold 26px system-ui, Arial";
-  ctx.fillText("Crash", W/2, H/2 - 10);
+  ctx.font = "bold 24px system-ui, Arial";
+  ctx.fillText(reason || "Run Over", W/2, H/2 - 10);
 
   ctx.font = "16px system-ui, Arial";
-  ctx.fillText("Press Start to race again", W/2, H/2 + 20);
+  ctx.fillText("Press Start to play again", W/2, H/2 + 20);
 }
 
-function rectHit(a,b){
-  return (
-    a.x < b.x + b.w &&
-    a.x + a.w > b.x &&
-    a.y < b.y + b.h &&
-    a.y + a.h > b.y
-  );
+function newRound(){
+  if(wordBank.length < 3){
+    endGame("No words loaded");
+    return;
+  }
+
+  currentTarget = pickRandom(wordBank);
+
+  const wrong1 = mutateWord(currentTarget);
+  const wrong2 = mutateWord(currentTarget);
+
+  let opts = [currentTarget, wrong1, wrong2];
+
+  opts = opts.map(o => o.trim());
+  opts = opts.filter(Boolean);
+
+  while(new Set(opts).size < 3){
+    opts[1] = mutateWord(currentTarget);
+    opts[2] = mutateWord(currentTarget);
+  }
+
+  currentOptions = shuffle(opts);
+  targetEl.textContent = currentTarget;
+
+  optionCars = [];
+  for(let lane=0; lane<road.laneCount; lane++){
+    const w = 80;
+    const h = 90;
+    const x = laneCenter(lane) - w/2;
+    const y = -120;
+    optionCars.push({
+      lane,
+      x,
+      y,
+      w,
+      h,
+      text: currentOptions[lane],
+      isCorrect: currentOptions[lane] === currentTarget
+    });
+  }
+
+  roundActive = true;
 }
 
-function spawnEnemy(){
-  const lane = Math.floor(Math.random() * road.laneCount);
-  const w = 40;
-  const h = 70;
-  const x = laneCenter(lane) - w/2;
-  const y = -h - 10;
-  const v = speed * (0.9 + Math.random() * 0.35);
-  enemies.push({ x, y, w, h, v, lane });
+function startGame(){
+  resetGame();
+  running = true;
+  startBtn.textContent = "Restart";
+  if(!wordBank.length){
+    loadWords().then(() => {
+      newRound();
+      requestAnimationFrame(loop);
+    });
+    return;
+  }
+  newRound();
+  requestAnimationFrame(loop);
 }
 
 function handleInput(){
@@ -125,37 +225,42 @@ function handleInput(){
 function update(dt){
   handleInput();
 
-  spawnTimer += dt;
-  while(spawnTimer >= spawnEvery){
-    spawnTimer -= spawnEvery;
-    spawnEnemy();
+  dashOffset += dt * speed * 0.6;
+
+  if(!roundActive){
+    newRound();
   }
 
-  for(const e of enemies){
-    e.y += e.v * dt;
+  for(const c of optionCars){
+    c.y += speed * dt;
   }
-  enemies = enemies.filter(e => e.y < H + 120);
 
-  const playerRect = { x: player.x, y: player.y, w: player.w, h: player.h };
-  for(const e of enemies){
-    if(rectHit(playerRect, e)){
-      endGame();
-      return;
+  const p = { x: player.x, y: player.y, w: player.w, h: player.h };
+
+  for(const c of optionCars){
+    if(rectHit(p, c)){
+      if(c.isCorrect){
+        score += 10;
+        scoreEl.textContent = String(Math.floor(score));
+
+        speed = Math.min(520, speed + 18);
+
+        roundActive = false;
+        optionCars = [];
+        return;
+      }else{
+        endGame("Wrong Spelling");
+        return;
+      }
     }
   }
 
-  score += dt * (speed / 3);
-  scoreEl.textContent = String(Math.floor(score));
-
-  difficultyTimer += dt;
-  if(difficultyTimer >= 5){
-    difficultyTimer = 0;
-    speed = Math.min(520, speed + 25);
-    spawnEvery = Math.max(0.38, spawnEvery - 0.05);
+  const passed = optionCars.length && optionCars[0].y > H + 140;
+  if(passed){
+    endGame("Too Slow");
+    return;
   }
 }
-
-let dashOffset = 0;
 
 function drawRoad(){
   ctx.fillStyle = "#0f1b33";
@@ -181,19 +286,29 @@ function drawRoad(){
   }
 }
 
-function drawCars(){
+function drawPlayer(){
   ctx.fillStyle = "#7aa2ff";
   ctx.fillRect(player.x, player.y, player.w, player.h);
+}
 
-  ctx.fillStyle = "#ff6b6b";
-  for(const e of enemies){
-    ctx.fillRect(e.x, e.y, e.w, e.h);
+function drawOptionCars(){
+  for(const c of optionCars){
+    ctx.fillStyle = c.isCorrect ? "#2dd4bf" : "#ff6b6b";
+    ctx.fillRect(c.x, c.y, c.w, c.h);
+
+    ctx.fillStyle = "#0b1220";
+    ctx.font = "12px system-ui, Arial";
+    ctx.textAlign = "center";
+
+    const text = c.text.length > 14 ? c.text.slice(0,14) + "…" : c.text;
+    ctx.fillText(text, c.x + c.w/2, c.y + c.h/2);
   }
 }
 
 function draw(){
   drawRoad();
-  drawCars();
+  drawPlayer();
+  drawOptionCars();
 }
 
 function loop(ts){
@@ -202,8 +317,6 @@ function loop(ts){
 
   const dt = Math.min(0.033, (ts - lastTs) / 1000);
   lastTs = ts;
-
-  dashOffset += dt * speed * 0.6;
 
   update(dt);
   if(running){
@@ -214,14 +327,9 @@ function loop(ts){
 
 function pressLeft(){ moveDir = -1; }
 function pressRight(){ moveDir = 1; }
-function stopMove(){}
 
 leftBtn.addEventListener("pointerdown", pressLeft);
 rightBtn.addEventListener("pointerdown", pressRight);
-leftBtn.addEventListener("pointerup", stopMove);
-rightBtn.addEventListener("pointerup", stopMove);
-leftBtn.addEventListener("pointercancel", stopMove);
-rightBtn.addEventListener("pointercancel", stopMove);
 
 document.addEventListener("keydown", (e) => {
   if(e.key === "ArrowLeft") moveDir = -1;
@@ -233,20 +341,4 @@ startBtn.addEventListener("click", startGame);
 
 player.x = laneCenter(player.lane) - player.w / 2;
 draw();
-let startX = null;
-
-canvas.addEventListener("touchstart", (e) => {
-  startX = e.touches[0].clientX;
-});
-
-canvas.addEventListener("touchend", (e) => {
-  if (startX === null) return;
-
-  const endX = e.changedTouches[0].clientX;
-  const diff = endX - startX;
-
-  if (diff > 40) moveDir = 1;
-  if (diff < -40) moveDir = -1;
-
-  startX = null;
-});
+loadWords();
