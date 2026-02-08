@@ -39,7 +39,7 @@ let score = 0;
 let moveDir = 0;
 let dashOffset = 0;
 
-let speed = 230;
+let speed = 120;
 
 let wordBank = [];
 let currentTarget = "";
@@ -117,7 +117,7 @@ function resetGame(){
   score = 0;
   scoreEl.textContent = "0";
 
-  speed = 230;
+  speed = 150;
   dashOffset = 0;
 
   optionCars = [];
@@ -225,7 +225,7 @@ function handleInput(){
 function update(dt){
   handleInput();
 
-  dashOffset += dt * speed * 0.6;
+  dashOffset += dt * speed * 0.4;
 
   if(!roundActive){
     newRound();
@@ -243,7 +243,7 @@ function update(dt){
         score += 10;
         scoreEl.textContent = String(Math.floor(score));
 
-        speed = Math.min(520, speed + 18);
+        speed = Math.min(320, speed + 18);
 
         roundActive = false;
         optionCars = [];
