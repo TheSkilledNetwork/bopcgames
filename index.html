@@ -1,24 +1,33 @@
+<!-- index.html -->
 <!doctype html>
 <html lang="en">
-<header class="top">
-  <h1>Spelling Racer</h1>
-  <div class="hud">
-    <div>Score: <span id="score">0</span></div>
-    <div>Best: <span id="best">0</span></div>
-  </div>
-  <div class="task">Find: <span id="targetWord">-</span></div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Spelling Racer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <h1>Spelling Racer</h1>
 
-<label class="levelRow">
-  Difficulty:
-  <select id="difficulty">
-    <option value="easy">Easy</option>
-    <option value="medium" selected>Medium</option>
-    <option value="hard">Hard</option>
-  </select>
-</label>
+      <div class="hud">
+        <div>Score: <span id="score">0</span></div>
+        <div>Best: <span id="best">0</span></div>
+      </div>
 
-</header>
+      <div class="task">Find: <span id="targetWord">-</span></div>
 
+      <label class="levelRow">
+        Difficulty:
+        <select id="difficulty">
+          <option value="easy">Easy</option>
+          <option value="medium" selected>Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+      </label>
+    </header>
 
     <canvas id="game" width="360" height="600"></canvas>
 
@@ -28,7 +37,11 @@
       <button id="right" type="button">Right</button>
     </section>
 
-    <p class="hint">Phone: tap Left or Right. Laptop: arrow keys.</p>
+    <section class="controls2">
+      <button id="mute" type="button">Sound: On</button>
+    </section>
+
+    <p class="hint">Phone: tap Left or Right. Laptop: arrow keys. Swipe on the road to switch lanes.</p>
   </main>
 
   <script src="game.js"></script>
