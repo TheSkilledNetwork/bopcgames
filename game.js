@@ -1,3 +1,4 @@
+// game.js
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
@@ -8,23 +9,115 @@ const targetEl = document.getElementById("targetWord");
 const leftBtn = document.getElementById("left");
 const rightBtn = document.getElementById("right");
 const startBtn = document.getElementById("start");
+const muteBtn = document.getElementById("mute");
 const difficultySel = document.getElementById("difficulty");
+
+// Basic checks
+const required = [
+  ["game", canvas],
+  ["score", scoreEl],
+  ["best", bestEl],
+  ["targetWord", targetEl],
+  ["left", leftBtn],
+  ["right", rightBtn],
+  ["start", startBtn],
+  ["difficulty", difficultySel]
+];
+for (const [id, el] of required) {
+  if (!el) throw new Error(`Missing element with id="${id}" in index.html`);
+}
 
 const W = canvas.width;
 const H = canvas.height;
 
+// Difficulty tuning
 const SETTINGS = {
-  easy:   { startSpeed: 135, maxSpeed: 250, speedStep: 6, dashFactor: 0.35 },
-  medium: { startSpeed: 150, maxSpeed: 320, speedStep: 8, dashFactor: 0.40 },
+  easy:   { startSpeed: 135, maxSpeed: 250, speedStep: 6,  dashFactor: 0.35 },
+  medium: { startSpeed: 150, maxSpeed: 320, speedStep: 8,  dashFactor: 0.40 },
   hard:   { startSpeed: 165, maxSpeed: 380, speedStep: 10, dashFactor: 0.45 },
   wordFont: 12,
   wordMaxLen: 16
 };
 
+// ---------- Sound ----------
+const sound = {
+  enabled: true,
+  engine: new Audio("sounds/engine.mp3"),
+  crash: new Audio("sounds/crash.mp3"),
+  correct: new Audio("sounds/correct.mp3"),
+  unlocked: false
+};
+
+sound.engine.loop = true;
+sound.engine.volume = 0.25;
+sound.crash.volume = 0.85;
+sound.correct.volume = 0.65;
+
+function unlockAudioOnce() {
+  if (sound.unlocked) return;
+  sound.unlocked = true;
+
+  const tryPrime = async (a) => {
+    try {
+      a.currentTime = 0;
+      await a.play();
+      a.pause();
+      a.currentTime = 0;
+    } catch (_) {}
+  };
+
+  tryPrime(sound.engine);
+  tryPrime(sound.crash);
+  tryPrime(sound.correct);
+}
+
+async function playEngine() {
+  if (!sound.enabled) return;
+  try { await sound.engine.play(); } catch (_) {}
+}
+
+function stopEngine() {
+  try { sound.engine.pause(); } catch (_) {}
+}
+
+async function playCrash() {
+  if (!sound.enabled) return;
+  try {
+    sound.crash.currentTime = 0;
+    await sound.crash.play();
+  } catch (_) {}
+}
+
+async function playCorrect() {
+  if (!sound.enabled) return;
+  try {
+    sound.correct.currentTime = 0;
+    await sound.correct.play();
+  } catch (_) {}
+}
+
+// Unlock audio on first user interaction
+startBtn.addEventListener("pointerdown", unlockAudioOnce);
+leftBtn.addEventListener("pointerdown", unlockAudioOnce);
+rightBtn.addEventListener("pointerdown", unlockAudioOnce);
+canvas.addEventListener("pointerdown", unlockAudioOnce);
+
+// Mute toggle
+if (muteBtn) {
+  muteBtn.addEventListener("click", () => {
+    sound.enabled = !sound.enabled;
+    muteBtn.textContent = sound.enabled ? "Sound: On" : "Sound: Off";
+    if (!sound.enabled) stopEngine();
+    if (sound.enabled && running) playEngine();
+  });
+}
+
+// ---------- Storage ----------
 const bestKey = "spelling-racer-best";
 let best = Number(localStorage.getItem(bestKey) || 0);
 bestEl.textContent = String(best);
 
+// ---------- Game state ----------
 let running = false;
 let lastTs = 0;
 
@@ -44,9 +137,13 @@ const player = {
 };
 
 let score = 0;
-let speed = 150;
+let speed = SETTINGS.medium.startSpeed;
 let dashOffset = 0;
 let moveDir = 0;
+
+let currentDashFactor = SETTINGS.medium.dashFactor;
+let currentMaxSpeed = SETTINGS.medium.maxSpeed;
+let currentSpeedStep = SETTINGS.medium.speedStep;
 
 let wordPools = { easy: [], medium: [], hard: [] };
 let wordBank = [];
@@ -84,6 +181,7 @@ function truncateWord(text) {
   return t.slice(0, SETTINGS.wordMaxLen - 1) + "…";
 }
 
+// Create realistic wrong spellings by small edits
 function makeWrongVariant(word) {
   const w = String(word || "").trim();
   if (w.length < 4) return w;
@@ -134,7 +232,7 @@ async function loadWordPools() {
 }
 
 function applyDifficultyPool() {
-  const chosen = (difficultySel && difficultySel.value) ? difficultySel.value : "medium";
+  const chosen = difficultySel.value || "medium";
   const pool = wordPools[chosen] && wordPools[chosen].length ? wordPools[chosen] : wordPools.medium;
   wordBank = pool;
 
@@ -145,11 +243,7 @@ function applyDifficultyPool() {
   currentSpeedStep = s.speedStep;
 }
 
-let currentDashFactor = SETTINGS.medium.dashFactor;
-let currentMaxSpeed = SETTINGS.medium.maxSpeed;
-let currentSpeedStep = SETTINGS.medium.speedStep;
-
-// ---------- Game ----------
+// ---------- Game flow ----------
 function resetGame() {
   player.lane = 1;
   player.x = laneCenter(player.lane) - player.w / 2;
@@ -174,11 +268,17 @@ function startGame() {
 
   running = true;
   startBtn.textContent = "Restart";
+
+  playEngine();
+
   requestAnimationFrame(loop);
 }
 
 function endGame(reason) {
   running = false;
+
+  stopEngine();
+  playCrash();
 
   best = Math.max(best, Math.floor(score));
   localStorage.setItem(bestKey, String(best));
@@ -268,7 +368,38 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !running) startGame();
 });
 
-startBtn.addEventListener("click", startGame);
+// Prevent changing difficulty mid-run
+difficultySel.addEventListener("change", () => {
+  if (running) {
+    difficultySel.value = currentDifficultyLocked;
+    return;
+  }
+  applyDifficultyPool();
+});
+
+let currentDifficultyLocked = difficultySel.value || "medium";
+
+startBtn.addEventListener("click", () => {
+  currentDifficultyLocked = difficultySel.value || "medium";
+  startGame();
+});
+
+// Swipe on canvas for mobile
+let swipeStartX = null;
+canvas.addEventListener("touchstart", (e) => {
+  swipeStartX = e.touches[0].clientX;
+}, { passive: true });
+
+canvas.addEventListener("touchend", (e) => {
+  if (swipeStartX === null) return;
+  const endX = e.changedTouches[0].clientX;
+  const diff = endX - swipeStartX;
+
+  if (diff > 40) moveDir = 1;
+  if (diff < -40) moveDir = -1;
+
+  swipeStartX = null;
+}, { passive: true });
 
 // ---------- Update ----------
 function update(dt) {
@@ -288,12 +419,14 @@ function update(dt) {
         score += 10;
         scoreEl.textContent = String(Math.floor(score));
 
+        playCorrect();
         speed = Math.min(currentMaxSpeed, speed + currentSpeedStep);
 
         roundActive = false;
         optionCars = [];
         return;
       }
+
       endGame("Wrong spelling");
       return;
     }
@@ -377,9 +510,7 @@ draw();
 
 loadWordPools().then(() => {
   applyDifficultyPool();
-  if (difficultySel) {
-    difficultySel.addEventListener("change", () => {
-      if (!running) applyDifficultyPool();
-    });
-  }
+  difficultySel.addEventListener("change", () => {
+    if (!running) applyDifficultyPool();
+  });
 });
